@@ -1,0 +1,88 @@
+import serial
+import matplotlib.pyplot as plt
+from matplotlib.animation import FuncAnimation
+from collections import deque
+
+# Configure serial port
+ser = serial.Serial('COM8', 9600)  # Change COM port as needed
+
+# Initialize plot buffers
+max_points = 50
+time_buffer = deque(maxlen=max_points)
+data_buffers = {
+    'temp': deque(maxlen=max_points),
+    'pressure': deque(maxlen=max_points),
+    'altitude': deque(maxlen=max_points),
+    'CO': deque(maxlen=max_points),
+    'CH4': deque(maxlen=max_points),
+    'H2': deque(maxlen=max_points),
+    'Propane': deque(maxlen=max_points),
+    'Smoke': deque(maxlen=max_points)
+}
+
+# Create figure with 8 subplots (one for each parameter)
+fig, axs = plt.subplots(8, 1, figsize=(12, 20))
+fig.suptitle('Individual Sensor Data Streams', y=0.99)
+
+# Configure individual plots
+plots = [
+    {'ax': axs[0], 'key': 'temp', 'title': 'Temperature', 'unit': '°C', 'color': 'r'},
+    {'ax': axs[1], 'key': 'pressure', 'title': 'Pressure', 'unit': 'hPa', 'color': 'g'},
+    {'ax': axs[2], 'key': 'altitude', 'title': 'Altitude', 'unit': 'm', 'color': 'b'},
+    {'ax': axs[3], 'key': 'CO', 'title': 'Carbon Monoxide', 'unit': 'ppm', 'color': 'orange'},
+    {'ax': axs[4], 'key': 'CH4', 'title': 'Methane', 'unit': 'ppm', 'color': 'purple'},
+    {'ax': axs[5], 'key': 'H2', 'title': 'Hydrogen', 'unit': 'ppm', 'color': 'brown'},
+    {'ax': axs[6], 'key': 'Propane', 'title': 'Propane', 'unit': 'ppm', 'color': 'pink'},
+    {'ax': axs[7], 'key': 'Smoke', 'title': 'Smoke Level', 'unit': 'AU', 'color': 'gray'}
+]
+
+# Initialize all plots
+for plot in plots:
+    plot['ax'].set_title(f"{plot['title']} ({plot['unit']})")
+    plot['ax'].grid(True)
+    plot['ax'].set_ylabel(plot['unit'])
+    plot['line'], = plot['ax'].plot([], [], color=plot['color'])
+
+def update(frame):
+    try:
+        raw = ser.readline().decode().strip()
+        
+        if 'Received packet: ' in raw and '| RSSI:' in raw:
+            data_part = raw.split('Received packet: ')[1].split(' | RSSI:')[0]
+        else:
+            data_part = raw
+            
+        values = [float(x.strip()) for x in data_part.split(',') if x.strip()]
+        
+        if len(values) == 8:
+            time_buffer.append(time_buffer[-1] + 1 if time_buffer else 0)
+            
+            # Update data buffers
+            data_buffers['temp'].append(values[0])
+            data_buffers['pressure'].append(values[1])
+            data_buffers['altitude'].append(values[2])
+            data_buffers['CO'].append(values[3])
+            data_buffers['CH4'].append(values[4])
+            data_buffers['H2'].append(values[5])
+            data_buffers['Propane'].append(values[6])
+            data_buffers['Smoke'].append(values[7])
+            
+            # Update individual plots
+            for plot in plots:
+                plot['line'].set_data(time_buffer, data_buffers[plot['key']])
+                plot['ax'].relim()
+                plot['ax'].autoscale_view()
+                
+            fig.tight_layout(rect=[0, 0, 1, 0.97])
+            
+        else:
+            print(f"Ignored malformed data: {raw}")
+            
+    except Exception as e:
+        print(f"Error: {str(e)}")
+
+    return []
+
+# Start animation
+ani = FuncAnimation(fig, update, interval=1000, cache_frame_data=False)
+plt.show()
